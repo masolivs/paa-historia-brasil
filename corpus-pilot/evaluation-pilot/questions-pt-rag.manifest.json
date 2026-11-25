@@ -1,0 +1,7 @@
+{
+  "count": 50,
+  "output": "evaluation-pilot/questions-pt-rag.jsonl",
+  "sha256": "5b29edba8dc9089a45ca543720f4a3fbdfb7d4fcb75d9ae75ff924b7fb84d95f",
+  "source_questions": "evaluation-pilot/questions-pt.jsonl",
+  "source_chunks": "corpus-pilot/chunks.jsonl"
+}

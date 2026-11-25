@@ -1,0 +1,26 @@
+{
+  "questions": 50,
+  "k": [
+    1,
+    5,
+    10
+  ],
+  "hnsw": {
+    "latency_ms_mean": 2.4926922406302765,
+    "latency_ms_p95": 4.314488460659049,
+    "mrr": 0.8065000000000001,
+    "map": 0.8065000000000001,
+    "recall@1_mean": 0.7,
+    "recall@5_mean": 0.96,
+    "recall@10_mean": 1.0
+  },
+  "cosine_exact": {
+    "latency_ms_mean": 9.038632501033135,
+    "latency_ms_p95": 11.613968950405251,
+    "mrr": 0.8065000000000001,
+    "map": 0.8065000000000001,
+    "recall@1_mean": 0.7,
+    "recall@5_mean": 0.96,
+    "recall@10_mean": 1.0
+  }
+}
