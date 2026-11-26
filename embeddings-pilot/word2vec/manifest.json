@@ -1,0 +1,12 @@
+{
+  "chunks": "corpus-pilot/chunks.jsonl",
+  "representation": "word2vec_average",
+  "model": "embeddings-pilot/word2vec/word2vec.model",
+  "dimension": 100,
+  "count": 2500,
+  "window": 5,
+  "min_count": 2,
+  "epochs": 3,
+  "dtype": "float32",
+  "normalized": true
+}

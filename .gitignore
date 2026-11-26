@@ -55,3 +55,8 @@ frontend/.env
 .idea/
 .DS_Store
 Thumbs.db
+
+# Artefatos locais do corpus completo (build_corpus.py)
+corpus/
+extracted-*/
+*.sqlite*

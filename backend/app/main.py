@@ -1,16 +1,70 @@
 import asyncio
+import os
+import threading
 import time
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.config import settings
 from backend.app.schemas import AnswerResponse, Citation, QuestionRequest, Timings
-from backend.app.services.llm_service import generate_answer
-from backend.app.services.qdrant_service import search_service
+
+load_dotenv()
+
+RAG_MANIFEST = Path(os.getenv("RAG_MANIFEST", "embeddings-pilot/e5-small/manifest.json"))
+RAG_RETRIEVAL = os.getenv("RAG_RETRIEVAL", "hnsw")
+RAG_EF = int(os.getenv("RAG_EF", "200"))
+RAG_TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.2"))
+
+_engine: Any = None
+_engine_lock = threading.Lock()
+
+
+def _safe_url(raw_url: Any) -> str | None:
+    if not raw_url:
+        return None
+    text = str(raw_url).strip()
+    if text.startswith(("http://", "https://")):
+        return text
+    return None
+
+
+def get_engine() -> Any:
+    global _engine
+    if _engine is not None:
+        return _engine
+
+    with _engine_lock:
+        if _engine is not None:
+            return _engine
+
+        if not RAG_MANIFEST.is_file():
+            raise FileNotFoundError(
+                f"Manifesto de embeddings não encontrado em '{RAG_MANIFEST}'. "
+                "Gere os embeddings do piloto antes de consultar a API."
+            )
+
+        from paa_rag.engine import RagEngine
+
+        _engine = RagEngine(
+            embedding_manifest=RAG_MANIFEST,
+            retrieval=RAG_RETRIEVAL,
+            k=settings.top_k_results,
+            ef=RAG_EF,
+            ollama_model=settings.ollama_model,
+            ollama_url=settings.ollama_base_url,
+            temperature=RAG_TEMPERATURE,
+            progress=lambda msg: print(f"[paa_rag] {msg}", flush=True),
+        )
+        return _engine
+
 
 app = FastAPI(
-    title="PAA — Busca Semântica em História Brasileira",
-    version="1.0.0",
+    title="PAA — Busca Semântica e RAG Local",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -28,7 +82,9 @@ def health_check() -> dict[str, str | bool]:
         "status": "ok",
         "mock_mode": settings.mock_mode,
         "model": settings.ollama_model,
-        "collection": settings.qdrant_collection,
+        "retrieval": RAG_RETRIEVAL,
+        "manifest": str(RAG_MANIFEST),
+        "engine_loaded": _engine is not None,
     }
 
 
@@ -74,27 +130,37 @@ async def ask_question(payload: QuestionRequest) -> AnswerResponse:
         )
 
     try:
-        # Busca e geração de embeddings são síncronas; execute-as fora do event loop.
-        citations, embedding_ms, search_ms = await asyncio.to_thread(
-            search_service.search, payload.question, top_k
-        )
-        if not citations:
-            raise HTTPException(
-                status_code=404,
-                detail="Nenhum documento relevante encontrado no banco vetorial.",
-            )
-        answer, llm_ms = await generate_answer(payload.question, citations)
-    except HTTPException:
-        raise
+        engine = await asyncio.to_thread(get_engine)
+        result = await asyncio.to_thread(engine.ask, payload.question, None, None, top_k)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Erro ao processar pergunta: {exc}",
         ) from exc
 
-    total_ms = round((time.perf_counter() - total_start) * 1000, 2)
+    citations: list[Citation] = []
+    for meta, snippet in zip(result.get("citations", []), result.get("contexts", [])):
+        citations.append(
+            Citation(
+                document=str(meta.get("title") or "Documento sem título"),
+                source=str(meta.get("source") or "Wikipédia"),
+                source_url=_safe_url(meta.get("url")),
+                doc_id=str(meta.get("chunk_id")) if meta.get("chunk_id") is not None else None,
+                snippet=str(snippet),
+                score=round(float(meta.get("score", 0.0)), 4),
+            )
+        )
+
+    latency = result.get("latency_ms", {})
+    embedding_ms = round(float(latency.get("embedding", 0.0)), 2)
+    search_ms = round(float(latency.get("retrieval", 0.0)), 2)
+    llm_ms = round(float(latency.get("generation", 0.0)), 2)
+    total_ms = round(float(latency.get("total", (time.perf_counter() - total_start) * 1000)), 2)
+
     return AnswerResponse(
-        answer=answer,
+        answer=str(result.get("answer") or "").strip(),
         citations=citations,
         timings=Timings(
             embedding_ms=embedding_ms,
@@ -102,5 +168,5 @@ async def ask_question(payload: QuestionRequest) -> AnswerResponse:
             llm_ms=llm_ms,
             total_ms=total_ms,
         ),
-        model=settings.ollama_model,
+        model=str(result.get("ollama_model") or settings.ollama_model),
     )
