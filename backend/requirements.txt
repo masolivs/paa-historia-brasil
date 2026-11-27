@@ -8,7 +8,15 @@ qdrant-client==1.12.1
 sentence-transformers==3.3.1
 transformers==4.47.1
 python-dotenv==1.0.1
-hnswlib==0.8.0
-sentencepiece>=0.2, <0.3
+numpy==1.26.4
+
+# Observação sobre HNSW:
+# Mantivemos `chroma-hnswlib` por distribuir binários pré-compilados (wheels) para Windows,
+# evitando a necessidade de instalar o Microsoft C++ Build Tools, e por expor o mesmo módulo
+# `import hnswlib` usado pelo motor `paa_rag`.
+# Caso prefira usar o pacote original (ex.: em Linux/macOS ou Windows com C++ Build Tools),
+# substitua `chroma-hnswlib` por `hnswlib==0.8.0`.
+chroma-hnswlib
+
+sentencepiece>=0.2,<0.3
 gensim==4.3.3
-numpy==1.26.4 
